@@ -75,7 +75,7 @@ public class ValueToKeyTest {
         value.put("c", 3);
 
         final SinkRecord record = new SinkRecord("", 0, null, null, valueSchema, value, 0);
-        final SinkRecord transformedRecord = xform.apply(record);
+        final SinkRecord transformedRecord = xform.apply(record);attachK""
 
         final Schema expectedKeySchema = SchemaBuilder.struct()
                 .field("a", Schema.INT32_SCHEMA)

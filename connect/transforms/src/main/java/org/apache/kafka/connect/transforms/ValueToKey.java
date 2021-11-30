@@ -28,6 +28,8 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.transforms.util.NonEmptyListValidator;
 import org.apache.kafka.connect.transforms.util.SimpleConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -37,7 +39,7 @@ import static org.apache.kafka.connect.transforms.util.Requirements.requireMap;
 import static org.apache.kafka.connect.transforms.util.Requirements.requireStruct;
 
 public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R> {
-
+    private static final Logger log = LoggerFactory.getLogger(ValueToKey.class);
     public static final String OVERVIEW_DOC = "Replace the record key with a new key formed from a subset of fields in the record value.";
 
     public static final String FIELDS_CONFIG = "fields";
@@ -79,16 +81,19 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
 
     private R applyWithSchema(R record) {
         final Struct value = requireStruct(record.value(), PURPOSE);
-
         Schema keySchema = valueToKeySchemaCache.get(value.schema());
         if (keySchema == null) {
             final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
             for (String field : fields) {
                 final Field fieldFromValue = value.schema().field(field);
                 if (fieldFromValue == null) {
-                    throw new DataException("Field does not exist: " + field);
+                    log.info("Field does not exist: " + field);
+                    keySchemaBuilder.field(field, Schema.INT64_SCHEMA);
+                    //throw new DataException("Field does not exist: " + field);
+                } else {
+                    keySchemaBuilder.field(field, fieldFromValue.schema());
                 }
-                keySchemaBuilder.field(field, fieldFromValue.schema());
+
             }
             keySchema = keySchemaBuilder.build();
             valueToKeySchemaCache.put(value.schema(), keySchema);
@@ -96,7 +101,12 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
 
         final Struct key = new Struct(keySchema);
         for (String field : fields) {
-            key.put(field, value.get(field));
+            Field f = value.schema().field(field);
+            if (f == null){
+                key.put(field, 0L);
+            }else {
+                key.put(field, value.get(field));
+            }
         }
 
         return record.newRecord(record.topic(), record.kafkaPartition(), keySchema, key, value.schema(), value, record.timestamp());
