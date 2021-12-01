@@ -82,18 +82,29 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
     private R applyWithSchema(R record) {
         final Struct value = requireStruct(record.value(), PURPOSE);
         Schema keySchema = valueToKeySchemaCache.get(value.schema());
+
+        log.info("all fields " + value.schema().fields().toString());
+        /**
+         * current op
+         * c for create when create before data is null
+         * u for update
+         * d for delete. when delete after data is null
+         * r for read
+         */
+        Field opField = value.schema().field("op");
+        String op = (opField == null) ? null : value.get("op").toString();
+        final Struct current = (op == null) ? null : (("u".equals(op) || "c".equals(op)) ? value.getStruct("after") : value.getStruct("before"));
+
         if (keySchema == null) {
             final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
             for (String field : fields) {
-                final Field fieldFromValue = value.schema().field(field);
-                if (fieldFromValue == null) {
-                    log.info("Field does not exist: " + field);
+                if (current == null || current.schema().field(field) == null) {
+                    log.info("Field does not exist: " + field + " use id");
                     keySchemaBuilder.field(field, Schema.INT64_SCHEMA);
-                    //throw new DataException("Field does not exist: " + field);
                 } else {
+                    final Field fieldFromValue = current.schema().field(field);
                     keySchemaBuilder.field(field, fieldFromValue.schema());
                 }
-
             }
             keySchema = keySchemaBuilder.build();
             valueToKeySchemaCache.put(value.schema(), keySchema);
@@ -101,11 +112,13 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
 
         final Struct key = new Struct(keySchema);
         for (String field : fields) {
-            Field f = value.schema().field(field);
-            if (f == null){
+            if (current == null || current.schema().field(field) == null) {
+                log.info("fields value is null " + field);
                 key.put(field, 0L);
-            }else {
-                key.put(field, value.get(field));
+            } else {
+                Object tValue = current.get(field);
+                log.info("fields is " + field + "value is " + tValue);
+                key.put(field, tValue);
             }
         }
 
