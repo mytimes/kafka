@@ -69,10 +69,10 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
     }
 
     private R applySchemaless(R record) {
-        final Map<String, Object> value = requireMapNullAsEmpty(record.value(), PURPOSE);
+        final Map<String, Object> value = requireMapOrNull(record.value(), PURPOSE);
         final Map<String, Object> key = new HashMap<>(fields.size());
         for (String field : fields) {
-            key.put(field, value.get(field));
+            key.put(field, (value == null) ? null : value.get(field));
         }
         return record.newRecord(record.topic(), record.kafkaPartition(), null, key, record.valueSchema(), record.value(), record.timestamp());
     }
