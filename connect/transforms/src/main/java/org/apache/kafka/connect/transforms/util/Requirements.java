@@ -49,7 +49,7 @@ public class Requirements {
 
 	public static Map<String, Object> requireMapNullAsEmpty(Object value, String purpose) {
 		if (value == null) {
-			return new HashMap<>;
+			return new HashMap<>();
 		}
 		return requireMap(value, purpose);
 	}
