@@ -78,28 +78,44 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
     }
 
     private R applyWithSchema(R record) {
-        final Struct value = requireStruct(record.value(), PURPOSE);
+		final Struct value = requireStruct(record.value(), PURPOSE);
+		Schema keySchema = valueToKeySchemaCache.get(value.schema());
+		/**
+		 * current op
+		 * c for create when create before data is null
+		 * u for update
+		 * d for delete. when delete after data is null
+		 * r for read
+		 */
+		Field opField = value.schema().field("op");
+		String op = (opField == null) ? null : value.get("op").toString();
+		final Struct current = (op == null) ? null : (("u".equals(op) || "c".equals(op)) ? value.getStruct("after") : value.getStruct("before"));
 
-        Schema keySchema = valueToKeySchemaCache.get(value.schema());
-        if (keySchema == null) {
-            final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
-            for (String field : fields) {
-                final Field fieldFromValue = value.schema().field(field);
-                if (fieldFromValue == null) {
-                    throw new DataException("Field does not exist: " + field);
-                }
-                keySchemaBuilder.field(field, fieldFromValue.schema());
-            }
-            keySchema = keySchemaBuilder.build();
-            valueToKeySchemaCache.put(value.schema(), keySchema);
-        }
+		if (keySchema == null) {
+			final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
+			for (String field : fields) {
+				if (current == null || current.schema().field(field) == null) {
+					keySchemaBuilder.field(field, Schema.INT64_SCHEMA);
+				} else {
+					final Field fieldFromValue = current.schema().field(field);
+					keySchemaBuilder.field(field, fieldFromValue.schema());
+				}
+			}
+			keySchema = keySchemaBuilder.build();
+			valueToKeySchemaCache.put(value.schema(), keySchema);
+		}
 
-        final Struct key = new Struct(keySchema);
-        for (String field : fields) {
-            key.put(field, value.get(field));
-        }
+		final Struct key = new Struct(keySchema);
+		for (String field : fields) {
+			if (current == null || current.schema().field(field) == null) {
+				key.put(field, 0L);
+			} else {
+				Object tValue = current.get(field);
+				key.put(field, tValue);
+			}
+		}
 
-        return record.newRecord(record.topic(), record.kafkaPartition(), keySchema, key, value.schema(), value, record.timestamp());
+		return record.newRecord(record.topic(), record.kafkaPartition(), keySchema, key, value.schema(), value, record.timestamp());
     }
 
     @Override
