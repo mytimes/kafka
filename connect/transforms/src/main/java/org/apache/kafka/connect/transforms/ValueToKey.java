@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.apache.kafka.connect.transforms.util.Requirements.requireMap;
+import static org.apache.kafka.connect.transforms.util.Requirements.requireMapOrNull;
+
 import static org.apache.kafka.connect.transforms.util.Requirements.requireStruct;
 
 public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R> {
