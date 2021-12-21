@@ -47,6 +47,13 @@ public class Requirements {
         return requireMap(value, purpose);
     }
 
+	public static Map<String, Object> requireMapNullAsEmpty(Object value, String purpose) {
+		if (value == null) {
+			return new HashMap<>;
+		}
+		return requireMap(value, purpose);
+	}
+
     public static Struct requireStruct(Object value, String purpose) {
         if (!(value instanceof Struct)) {
             throw new DataException("Only Struct objects supported for [" + purpose + "], found: " + nullSafeClassName(value));
