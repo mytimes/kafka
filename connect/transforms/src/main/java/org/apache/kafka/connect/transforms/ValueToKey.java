@@ -87,11 +87,11 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
 		 * c for create when create before data is null
 		 * u for update
 		 * d for delete. when delete after data is null
-		 * r for read
+		 * r for read or snapshot increament
 		 */
 		Field opField = value.schema().field("op");
 		String op = (opField == null) ? null : value.get("op").toString();
-		final Struct current = (op == null) ? null : (("u".equals(op) || "c".equals(op)) ? value.getStruct("after") : value.getStruct("before"));
+		final Struct current = (op == null) ? null : (("u".equals(op) || "c".equals(op) || "r".equals(op)) ? value.getStruct("after") : value.getStruct("before"));
 
 		if (keySchema == null) {
 			final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
