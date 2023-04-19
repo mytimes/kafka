@@ -70,7 +70,7 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
         }
     }
 
-    private R applySchemaless(R record) {
+    private R applySchemaless(R rq其ecord) {
         final Map<String, Object> value = requireMapOrNull(record.value(), PURPOSE);
         final Map<String, Object> key = new HashMap<>(fields.size());
         for (String field : fields) {
@@ -111,11 +111,15 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
 		for (String field : fields) {
 			if (current == null || current.schema().field(field) == null) {
 				if (current != null && current.schema().field("id") != null) {
-					key.put(field, current.get("id"));
+                    Field f = current.schema().field("id");
+                    if (f.schema() == Schema.INT64_SCHEMA){
+                        key.put(field, current.get("id"));
+                    } else {
+                        key.put(field, 0L);
+                    }
 				}else {
 					key.put(field, 0L);
 				}
-
 			} else {
 				Object tValue = current.get(field);
 				key.put(field, tValue);
