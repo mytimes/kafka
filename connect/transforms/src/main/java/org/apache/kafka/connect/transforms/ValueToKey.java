@@ -33,7 +33,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.kafka.connect.transforms.util.Requirements.requireMap;
+import static org.apache.kafka.connect.transforms.util.Requirements.requireMapOrNull;
 import static org.apache.kafka.connect.transforms.util.Requirements.requireStruct;
 
 public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R> {
@@ -79,17 +79,58 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
     }
 
     private R applySchemaless(R record) {
-        final Map<String, Object> value = requireMap(record.value(), PURPOSE);
+        // Tombstones have a null value and no schema; write a null field into the key.
+        final Map<String, Object> value = requireMapOrNull(record.value(), PURPOSE);
         final Map<String, Object> key = new HashMap<>(fields.size());
         for (String field : fields) {
-            key.put(field, value.get(field));
+            key.put(field, value == null ? null : value.get(field));
         }
         return record.newRecord(record.topic(), record.kafkaPartition(), null, key, record.valueSchema(), record.value(), record.timestamp());
     }
 
     private R applyWithSchema(R record) {
         final Struct value = requireStruct(record.value(), PURPOSE);
+        if (isDebeziumEnvelope(value)) {
+            return applyDebeziumEnvelope(record, value);
+        }
+        return applyTopLevel(record, value);
+    }
 
+    /**
+     * Debezium change events keep row columns inside {@code after}/{@code before}, not on the envelope.
+     * Local patch: read the row selected by {@code op}, and when the configured field is absent use {@code id}
+     * when its value is a number, otherwise {@code 0}. Non-envelope records keep the upstream behavior.
+     */
+    private R applyDebeziumEnvelope(R record, Struct value) {
+        final Struct current = debeziumRow(value);
+        Schema keySchema = valueToKeySchemaCache.get(value.schema());
+        if (keySchema == null) {
+            final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
+            for (String field : fields) {
+                if (current == null || current.schema().field(field) == null) {
+                    keySchemaBuilder.field(field, Schema.INT64_SCHEMA);
+                }
+                else {
+                    keySchemaBuilder.field(field, current.schema().field(field).schema());
+                }
+            }
+            keySchema = keySchemaBuilder.build();
+            valueToKeySchemaCache.put(value.schema(), keySchema);
+        }
+
+        final Struct key = new Struct(keySchema);
+        for (String field : fields) {
+            if (current == null || current.schema().field(field) == null) {
+                key.put(field, fallbackKeyValue(current));
+            }
+            else {
+                key.put(field, replaceNullWithDefault ? current.get(field) : current.getWithoutDefault(field));
+            }
+        }
+        return record.newRecord(record.topic(), record.kafkaPartition(), keySchema, key, value.schema(), value, record.timestamp());
+    }
+
+    private R applyTopLevel(R record, Struct value) {
         Schema keySchema = valueToKeySchemaCache.get(value.schema());
         if (keySchema == null) {
             final SchemaBuilder keySchemaBuilder = SchemaBuilder.struct();
@@ -110,6 +151,37 @@ public class ValueToKey<R extends ConnectRecord<R>> implements Transformation<R>
         }
 
         return record.newRecord(record.topic(), record.kafkaPartition(), keySchema, key, value.schema(), value, record.timestamp());
+    }
+
+    private static boolean isDebeziumEnvelope(Struct value) {
+        Schema schema = value.schema();
+        return schema.field("op") != null && (schema.field("after") != null || schema.field("before") != null);
+    }
+
+    /**
+     * {@code c}/{@code u}/{@code r} use {@code after}. Other ops, including {@code d}, use {@code before}.
+     */
+    private static Struct debeziumRow(Struct value) {
+        Object opValue = value.get("op");
+        if (opValue == null) {
+            return null;
+        }
+        String op = opValue.toString();
+        if ("u".equals(op) || "c".equals(op) || "r".equals(op)) {
+            return value.getStruct("after");
+        }
+        return value.getStruct("before");
+    }
+
+    private static long fallbackKeyValue(Struct current) {
+        if (current == null || current.schema().field("id") == null) {
+            return 0L;
+        }
+        Object idValue = current.get("id");
+        if (idValue instanceof Number) {
+            return Long.valueOf(idValue.toString());
+        }
+        return 0L;
     }
 
     @Override
